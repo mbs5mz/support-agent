@@ -38,6 +38,33 @@ class DemoFlows(unittest.TestCase):
         self.assertIn("whether", answer)
         self.assertFalse(calls)
 
+    def test_switch_from_order_to_policy_and_return(self):
+        history = [{"role": "user", "content": "Where is BK-2088? My email is sam@example.com"}]
+        answer, calls = respond_demo(history)
+        self.assertEqual(calls[0]["tool"], "get_order_status")
+        history += [{"role": "assistant", "content": answer}, {"role": "user", "content": "What is your shipping policy?"}]
+        answer, calls = respond_demo(history)
+        self.assertIn("Standard shipping", answer)
+        self.assertEqual(calls[0]["tool"], "get_policy")
+        history += [{"role": "assistant", "content": answer}, {"role": "user", "content": "I want to return my book"}]
+        answer, calls = respond_demo(history)
+        self.assertIn("Would you like", answer)
+        self.assertEqual(calls[0]["tool"], "get_order_status")
+        history += [{"role": "assistant", "content": answer}, {"role": "user", "content": "No thanks"}]
+        answer, calls = respond_demo(history)
+        self.assertIn("haven't created", answer)
+        self.assertFalse(calls)
+
+    def test_return_policy_after_order_does_not_start_return(self):
+        history = [
+            {"role": "user", "content": "Where is BK-1042, alex@example.com?"},
+            {"role": "assistant", "content": "Order BK-1042 is shipped."},
+            {"role": "user", "content": "What is your return policy?"},
+        ]
+        answer, calls = respond_demo(history)
+        self.assertIn("30 days", answer)
+        self.assertEqual(calls[0]["tool"], "get_policy")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -54,21 +54,50 @@ def respond_ai(history: list) -> tuple[str, list]:
 
 def respond_demo(history: list) -> tuple[str, list]:
     """Predictable fallback for reviewers without an API key; not presented as an LLM."""
-    user_text = " ".join(turn["content"] for turn in history if turn["role"] == "user")
     latest = history[-1]["content"].lower()
+    previous_answer = next((turn["content"].lower() for turn in reversed(history[:-1]) if turn["role"] == "assistant"), "")
+    user_text = " ".join(turn["content"] for turn in history if turn["role"] == "user")
     order = re.search(r"\bBK-\d{4}\b", user_text, re.I)
     email = re.search(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", user_text)
-    wants_return = any(word in user_text.lower() for word in ("return", "refund"))
-    wants_order = any(word in user_text.lower() for word in ("order", "package", "tracking", "where is", "where's", "status"))
-    if wants_return or wants_order:
+
+    # Route new requests from the current turn. Earlier turns only supply missing fields.
+    policy_topic = next((topic for topic in ("shipping", "returns", "password") if topic in latest or (topic == "password" and "reset" in latest)), None)
+    if "return policy" in latest or "refund policy" in latest or "returns" in latest:
+        policy_topic = "returns"
+    policy_request = "policy" in latest or "shipping" in latest or "password" in latest or "reset" in latest or "returns" in latest
+    return_request = bool(re.search(r"\b(return|refund)\b", latest)) and not policy_request
+    order_request = any(word in latest for word in ("order", "package", "tracking", "where is", "where's", "status"))
+    confirming_return = "create a return request?" in previous_answer and latest.strip() in ("yes", "yes please", "please do", "go ahead", "create it", "yes, please create it")
+    declining_return = "create a return request?" in previous_answer and latest.strip() in ("no", "no thanks", "cancel")
+
+    if declining_return:
+        return "Okay, I haven't created a return request.", []
+    if policy_request:
+        if not policy_topic:
+            return "Can you tell me whether you mean shipping, returns, or password reset?", []
+        result = FUNCTIONS["get_policy"](policy_topic)
+        return result["policy"], [{"tool": "get_policy", "arguments": {"topic": policy_topic}, "result": result}]
+
+    if return_request:
+        intent = "return"
+    elif order_request:
+        intent = "order"
+    elif confirming_return:
+        intent = "return_confirmed"
+    elif any(prompt in previous_answer for prompt in ("what is your order number?", "what email address was used")):
+        # A bare ID or email continues the question the agent just asked.
+        prior_requests = [turn["content"].lower() for turn in history[:-1] if turn["role"] == "user"]
+        intent = "return" if any(re.search(r"\b(return|refund)\b", text) and "policy" not in text for text in prior_requests) else "order"
+    else:
+        return "Can you tell me whether you mean an order, a return, shipping, or password reset?", []
+
+    if intent in ("return", "return_confirmed", "order"):
         if not order:
             return "What is your order number? It looks like BK-1042.", []
         if not email:
             return "What email address was used for that order?", []
-        if wants_return:
-            if latest.strip() in ("no", "no thanks", "cancel"):
-                return "Okay, I haven't created a return request.", []
-            if not any(phrase in latest for phrase in ("yes", "create", "please do", "go ahead")):
+        if intent in ("return", "return_confirmed"):
+            if intent != "return_confirmed":
                 result = FUNCTIONS["get_order_status"](order.group(), email.group())
                 activity = [{"tool": "get_order_status", "arguments": {"order_id": order.group(), "email": email.group()}, "result": result}]
                 if "error" in result:
@@ -80,11 +109,6 @@ def respond_demo(history: list) -> tuple[str, list]:
         result = FUNCTIONS["get_order_status"](order.group(), email.group())
         activity = [{"tool": "get_order_status", "arguments": {"order_id": order.group(), "email": email.group()}, "result": result}]
         return (result.get("error") or f"Order {result['order_id']} for {result['book']} is {result['status'].lower()}. {result['detail']}"), activity
-    topics = [topic for topic in ("shipping", "returns", "password") if topic in latest or (topic == "password" and "reset" in latest)]
-    if len(topics) != 1:
-        return "Can you tell me whether you mean shipping, returns, or password reset?", []
-    result = FUNCTIONS["get_policy"](topics[0])
-    return result["policy"], [{"tool": "get_policy", "arguments": {"topic": topics[0]}, "result": result}]
 
 
 def respond(history: list) -> tuple[str, list, str]:
