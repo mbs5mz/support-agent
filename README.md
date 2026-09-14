@@ -12,6 +12,8 @@ python3 server.py
 
 Open <http://localhost:8000>. With no API key, the app visibly labels itself **Scripted demo** and uses predictable fallback replies. To use a real model, set `OPENAI_API_KEY` in your shell before starting the server. `OPENAI_MODEL` is optional; it defaults to `gpt-5-mini`. The key stays on the server and must never be committed.
 
+The **Demo orders** panel lists the fictional order numbers, emails, and best workflow to try for each one.
+
 ```bash
 export OPENAI_API_KEY="your-key"
 python3 server.py

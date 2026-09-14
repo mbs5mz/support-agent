@@ -35,7 +35,7 @@ class DemoFlows(unittest.TestCase):
 
     def test_ambiguous_policy(self):
         answer, calls = respond_demo([{"role": "user", "content": "I need help with a policy"}])
-        self.assertIn("whether", answer)
+        self.assertIn("shipping", answer)
         self.assertFalse(calls)
 
     def test_switch_from_order_to_policy_and_return(self):

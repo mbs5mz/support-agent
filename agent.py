@@ -8,7 +8,7 @@ from urllib.request import Request, urlopen
 from bookly import FUNCTIONS, TOOLS
 
 INSTRUCTIONS = """You are Bookly's customer support agent. Bookly and all records are fictional.
-Keep replies concise and friendly. Never invent order status or policy details; use tools.
+Keep replies concise, warm, and lightly upbeat, like a helpful bookseller. Use natural phrases such as "Happy to help" or "I found it" where they fit; avoid excessive exclamation points. Never invent order status or policy details; use tools.
 For an order lookup, collect both order ID and email before calling get_order_status.
 For a return, collect both fields and explicit confirmation before calling create_return_request.
 For a refund, collect both fields, check order status, explain that a returned book must have been received, and ask for explicit confirmation before calling create_refund_request. A request is only submitted for review; no money moves.
@@ -79,14 +79,14 @@ def respond_demo(history: list) -> tuple[str, list]:
     declining_refund = "create a refund request?" in previous_answer and latest.strip() in ("no", "no thanks", "cancel")
 
     if declining_return:
-        return "Okay, I haven't created a return request.", []
+        return "No problem! I haven't created a return request. Let me know if you'd like help with anything else.", []
     if declining_refund:
-        return "Okay, I haven't created a refund request.", []
+        return "No problem! I haven't created a refund request. I'm here if you need anything else.", []
     if policy_request:
         if not policy_topic:
-            return "Can you tell me whether you mean shipping, returns, or password reset?", []
+            return "Happy to help! Do you mean shipping, returns, or password reset?", []
         result = FUNCTIONS["get_policy"](policy_topic)
-        return result["policy"], [{"tool": "get_policy", "arguments": {"topic": policy_topic}, "result": result}]
+        return f"Of course! {result['policy']}", [{"tool": "get_policy", "arguments": {"topic": policy_topic}, "result": result}]
 
     if refund_request:
         intent = "refund"
@@ -104,23 +104,23 @@ def respond_demo(history: list) -> tuple[str, list]:
         prior_intent = next((text for text in reversed(prior_requests) if re.search(r"\b(return|refund|order|tracking|status)\b", text) and "policy" not in text), "")
         intent = "refund" if "refund" in prior_intent else "return" if "return" in prior_intent else "order"
     else:
-        return "Can you tell me whether you mean an order, a return, a refund, shipping, or password reset?", []
+        return "I'm happy to help! Is this about an order, a return, a refund, shipping, or password reset?", []
 
     if intent in ("return", "return_confirmed", "refund", "refund_confirmed", "order"):
         if not order:
-            return "What is your order number? It looks like BK-1042.", []
+            return "Happy to look into that! What is your order number? It looks like BK-1042.", []
         if not email:
-            return "What email address was used for that order?", []
+            return "Thanks! What email address was used for that order?", []
         if intent in ("return", "return_confirmed"):
             if intent != "return_confirmed":
                 result = FUNCTIONS["get_order_status"](order.group(), email.group())
                 activity = [{"tool": "get_order_status", "arguments": {"order_id": order.group(), "email": email.group()}, "result": result}]
                 if "error" in result:
                     return result["error"], activity
-                return f"I found {result['book']} ({result['status']}). Would you like me to create a return request?", activity
+                return f"I found it! {result['book']} is marked {result['status'].lower()}. Would you like me to create a return request?", activity
             result = FUNCTIONS["create_return_request"](order.group(), email.group())
             activity = [{"tool": "create_return_request", "arguments": {"order_id": order.group(), "email": email.group()}, "result": result}]
-            return (result.get("error") or f"Demo return request {result['request_id']} created. {result['next_step']}"), activity
+            return (result.get("error") or f"All set! Demo return request {result['request_id']} was created. {result['next_step']}"), activity
         if intent in ("refund", "refund_confirmed"):
             if intent != "refund_confirmed":
                 result = FUNCTIONS["get_order_status"](order.group(), email.group())
@@ -128,14 +128,14 @@ def respond_demo(history: list) -> tuple[str, list]:
                 if "error" in result:
                     return result["error"], activity
                 if result["status"] != "Return received":
-                    return "I found the order, but a returned book has not been received yet. I can't submit a refund request until it is received.", activity
-                return f"I found {result['book']}; its return was received. Would you like me to create a refund request? This only submits it for review.", activity
+                    return "I found the order! Its returned book has not been received yet, so I can't submit a refund request until it arrives.", activity
+                return f"Good news, I found {result['book']} and its return was received. Would you like me to create a refund request? This only submits it for review.", activity
             result = FUNCTIONS["create_refund_request"](order.group(), email.group())
             activity = [{"tool": "create_refund_request", "arguments": {"order_id": order.group(), "email": email.group()}, "result": result}]
-            return (result.get("error") or f"Demo refund request {result['request_id']} submitted for review. {result['next_step']}"), activity
+            return (result.get("error") or f"All set! Demo refund request {result['request_id']} was submitted for review. {result['next_step']}"), activity
         result = FUNCTIONS["get_order_status"](order.group(), email.group())
         activity = [{"tool": "get_order_status", "arguments": {"order_id": order.group(), "email": email.group()}, "result": result}]
-        return (result.get("error") or f"Order {result['order_id']} for {result['book']} is {result['status'].lower()}. {result['detail']}"), activity
+        return (result.get("error") or f"I found it! Order {result['order_id']} for {result['book']} is {result['status'].lower()}. {result['detail']}"), activity
 
 
 def respond(history: list) -> tuple[str, list, str]:

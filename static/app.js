@@ -54,7 +54,7 @@ async function submit(text) {
 
 form.addEventListener('submit', event => {event.preventDefault(); submit(input.value);});
 suggestions.forEach(button => button.addEventListener('click', () => {input.value = button.dataset.prompt; input.focus();}));
-document.querySelector('#reset').addEventListener('click', () => {history = []; messages.innerHTML = ''; activity.innerHTML = '<div class="empty-activity"><span>✦</span><p>No tools called yet.</p></div>'; bubble('Hi! What can I help you with?', 'assistant'); input.focus();});
+document.querySelector('#reset').addEventListener('click', () => {history = []; messages.innerHTML = ''; activity.innerHTML = '<div class="empty-activity"><span>✦</span><p>No tools called yet.</p></div>'; bubble('Hi there! I’m happy to help with an order, return, refund, or policy question. What’s on your mind?', 'assistant'); input.focus();});
 
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const mic = document.querySelector('#mic');
