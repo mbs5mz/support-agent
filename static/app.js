@@ -5,6 +5,7 @@ const form = document.querySelector('#form');
 const send = document.querySelector('#send');
 const mode = document.querySelector('#mode');
 const voiceNote = document.querySelector('#voice-note');
+const suggestions = document.querySelectorAll('.suggestion');
 let history = [];
 
 function bubble(text, role) {
@@ -21,6 +22,7 @@ async function submit(text) {
   history.push({role: 'user', content: text});
   input.value = '';
   send.disabled = true;
+  suggestions.forEach(button => button.disabled = true);
   try {
     const response = await fetch('/api/chat', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({history})});
     const data = await response.json();
@@ -29,7 +31,8 @@ async function submit(text) {
     history.push({role: 'assistant', content: data.answer});
     mode.textContent = data.mode;
     for (const call of data.activity) {
-      if (activity.textContent === 'No tools called yet.') activity.textContent = '';
+      const empty = activity.querySelector('.empty-activity');
+      if (empty) empty.remove();
       const row = document.createElement('div');
       row.className = 'tool-call';
       const title = document.createElement('strong');
@@ -44,13 +47,14 @@ async function submit(text) {
     history.pop();
   } finally {
     send.disabled = false;
+    suggestions.forEach(button => button.disabled = false);
     input.focus();
   }
 }
 
 form.addEventListener('submit', event => {event.preventDefault(); submit(input.value);});
-document.querySelectorAll('.suggestion').forEach(button => button.addEventListener('click', () => submit(button.dataset.prompt)));
-document.querySelector('#reset').addEventListener('click', () => {history = []; messages.innerHTML = ''; activity.textContent = 'No tools called yet.'; bubble('Hi! What can I help you with?', 'assistant'); input.focus();});
+suggestions.forEach(button => button.addEventListener('click', () => {input.value = button.dataset.prompt; input.focus();}));
+document.querySelector('#reset').addEventListener('click', () => {history = []; messages.innerHTML = ''; activity.innerHTML = '<div class="empty-activity"><span>✦</span><p>No tools called yet.</p></div>'; bubble('Hi! What can I help you with?', 'assistant'); input.focus();});
 
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const mic = document.querySelector('#mic');
