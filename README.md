@@ -26,9 +26,9 @@ The microphone has two modes. With `OPENAI_API_KEY`, press once to start recordi
 ## Review scenarios
 
 1. **Multi-turn order lookup:** Say “Where is my order?” → `BK-1042` → `alex@example.com`. The backend calls `get_order_status` and displays the result.
-2. **Action:** Say “I want to return my book” → `BK-2088` → `sam@example.com` → “Yes, please create it.” The backend creates fictional request `RET-2088` and shows the tool call. No real refund or email occurs.
+2. **Action:** Say “I want to return my book” → `BK-2088` → `sam@example.com` → “Yes.” The backend creates fictional request `RET-2088` and shows the tool call. Natural confirmations such as “sure” and “go ahead” also work. No real refund or email occurs.
 3. **Clarification:** Say “I need help with a policy.” The agent asks which policy before using `get_policy`.
-4. **Refund request:** Say “I want a refund” → `BK-4120` → `morgan@example.com` → “Yes, please create it.” The order was delivered and its return was received. The backend creates fictional review request `REF-4120`; no money moves.
+4. **Refund request:** Say “I want a refund” → `BK-4120` → `morgan@example.com` → “Yes.” The order was delivered and its return was received. The backend creates fictional review request `REF-4120`; no money moves.
 
 `BK-2088 / sam@example.com` is delivered but has not been returned, so it works for the return workflow and demonstrates why a refund request is not yet eligible. The in-memory request records reset whenever the server restarts.
 

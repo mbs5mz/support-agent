@@ -8,6 +8,10 @@ from bookly import REFUND_REQUESTS, RETURN_REQUESTS, create_refund_request
 
 
 class DemoFlows(unittest.TestCase):
+    def setUp(self):
+        RETURN_REQUESTS.clear()
+        REFUND_REQUESTS.clear()
+
     def test_order_multiturn(self):
         history = [{"role": "user", "content": "Where is my order?"}]
         answer, calls = respond_demo(history)

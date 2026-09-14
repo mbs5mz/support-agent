@@ -3,6 +3,7 @@
 import json
 import os
 import re
+from typing import Optional
 from urllib.request import Request, urlopen
 
 from bookly import FUNCTIONS, TOOLS
@@ -13,6 +14,7 @@ For an order lookup, collect both order ID and email before calling get_order_st
 When asking for an order number, do not suggest a particular sample order; direct the user to the Demo orders panel if helpful.
 For a return, collect both fields and explicit confirmation before calling create_return_request.
 For a refund, collect both fields, check order status, explain that a returned book must have been received, and ask for explicit confirmation before calling create_refund_request. A request is only submitted for review; no money moves.
+An ordinary affirmative reply such as "yes", "sure", or "go ahead" confirms the specific action you just offered. Do not ask the customer to repeat a prescribed phrase.
 If a request is ambiguous, ask one focused clarifying question before answering or using a tool.
 Never ask for a password or password-reset link. Do not claim a real refund or email was sent.
 If a tool reports an error, explain it without guessing.
@@ -26,7 +28,62 @@ def call_responses(input_items: list, model: str) -> dict:
         return json.load(response)
 
 
+def normalized_reply(text: str) -> str:
+    return re.sub(r"[^a-z0-9 ]+", " ", text.lower()).strip()
+
+
+def is_affirmative(text: str) -> bool:
+    reply = normalized_reply(text)
+    return bool(re.match(r"^(yes|yeah|yep|yup|sure|ok|okay|absolutely|certainly|please do|go ahead|do it|sounds good|let s do it|lets do it|that works|perfect)\b", reply)) and not bool(re.search(r"\b(no|not|don t|dont|cancel|wait)\b", reply))
+
+
+def is_negative(text: str) -> bool:
+    return normalized_reply(text) in ("no", "no thanks", "cancel", "not now", "don t", "dont")
+
+
+def pending_request_kind(previous_answer: str) -> Optional[str]:
+    text = previous_answer.lower()
+    if "?" not in text and "confirm" not in text:
+        return None
+    questions = re.findall(r"[^?]*\?", text)
+    proposal = (questions[-1] if questions else text).rsplit(".", 1)[-1]
+    if not re.search(r"\b(create|start|submit|open|initiate|request|proceed|process|go ahead|confirm)\b", proposal):
+        return None
+    if re.search(r"\brefund\b", proposal):
+        return "refund"
+    if re.search(r"\breturn\b", proposal):
+        return "return"
+    return None
+
+
+def confirmed_action(history: list) -> Optional[tuple[str, list]]:
+    """Complete a proposed action from a natural short yes, without another model turn."""
+    previous_answer = next((turn["content"] for turn in reversed(history[:-1]) if turn["role"] == "assistant"), "")
+    kind = pending_request_kind(previous_answer)
+    if not kind or not is_affirmative(history[-1]["content"]):
+        return None
+    user_text = " ".join(turn["content"] for turn in history if turn["role"] == "user")
+    orders = re.findall(r"\bBK-\d{4}\b", user_text, re.I)
+    emails = re.findall(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", user_text)
+    if not orders:
+        return "What is your order number? You can find the sample options in the Demo orders panel.", []
+    if not emails:
+        return "What email address was used for that order?", []
+    name = "create_return_request" if kind == "return" else "create_refund_request"
+    args = {"order_id": orders[-1], "email": emails[-1]}
+    result = FUNCTIONS[name](**args)
+    activity = [{"tool": name, "arguments": args, "result": result}]
+    if "error" in result:
+        return result["error"], activity
+    if kind == "return":
+        return f"All set! Demo return request {result['request_id']} was created. {result['next_step']}", activity
+    return f"All set! Demo refund request {result['request_id']} was submitted for review. {result['next_step']}", activity
+
+
 def respond_ai(history: list) -> tuple[str, list]:
+    completed = confirmed_action(history)
+    if completed is not None:
+        return completed
     items = [{"role": turn["role"], "content": turn["content"]} for turn in history]
     activity = []
     model = os.getenv("OPENAI_MODEL", "gpt-5-mini")
@@ -44,10 +101,8 @@ def respond_ai(history: list) -> tuple[str, list]:
             try:
                 args = json.loads(call.get("arguments", "{}"))
                 previous_answer = next((turn["content"].lower() for turn in reversed(history[:-1]) if turn["role"] == "assistant"), "")
-                confirmed = history[-1]["content"].strip().lower() in ("yes", "yes please", "please do", "go ahead", "create it", "yes, please create it", "submit it", "yes, submit it")
                 request_kind = "return" if name == "create_return_request" else "refund"
-                pending_request = re.search(rf"\b(create|submit) (a |the )?{request_kind} request\b", previous_answer)
-                if name in ("create_return_request", "create_refund_request") and not (confirmed and pending_request):
+                if name in ("create_return_request", "create_refund_request") and not (is_affirmative(history[-1]["content"]) and pending_request_kind(previous_answer) == request_kind):
                     result = {"error": "Ask the customer to confirm this specific request first."}
                 else:
                     result = FUNCTIONS[name](**args) if name in FUNCTIONS else {"error": "Unknown tool"}
@@ -74,10 +129,11 @@ def respond_demo(history: list) -> tuple[str, list]:
     refund_request = bool(re.search(r"\brefund\b", latest)) and not policy_request
     return_request = bool(re.search(r"\breturn\b", latest)) and not policy_request
     order_request = any(word in latest for word in ("order", "package", "tracking", "where is", "where's", "status"))
-    confirming_return = "create a return request?" in previous_answer and latest.strip() in ("yes", "yes please", "please do", "go ahead", "create it", "yes, please create it")
-    declining_return = "create a return request?" in previous_answer and latest.strip() in ("no", "no thanks", "cancel")
-    confirming_refund = "create a refund request?" in previous_answer and latest.strip() in ("yes", "yes please", "please do", "go ahead", "create it", "yes, please create it", "submit it", "yes, submit it")
-    declining_refund = "create a refund request?" in previous_answer and latest.strip() in ("no", "no thanks", "cancel")
+    pending_kind = pending_request_kind(previous_answer)
+    confirming_return = pending_kind == "return" and is_affirmative(latest)
+    declining_return = pending_kind == "return" and is_negative(latest)
+    confirming_refund = pending_kind == "refund" and is_affirmative(latest)
+    declining_refund = pending_kind == "refund" and is_negative(latest)
 
     if declining_return:
         return "No problem! I haven't created a return request. Let me know if you'd like help with anything else.", []
