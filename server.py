@@ -1,17 +1,42 @@
 """Run: python3 server.py. Visit http://localhost:8000."""
 
 import json
+import os
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from agent import respond
 
 STATIC = Path(__file__).parent / "static"
 
 
+def transcribe_clip(audio: bytes, content_type: str) -> str:
+    extensions = {"audio/webm": "webm", "audio/mp4": "mp4", "audio/mpeg": "mp3", "audio/wav": "wav"}
+    boundary = uuid.uuid4().hex
+    filename = f"recording.{extensions[content_type]}"
+    body = (
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\ngpt-transcribe\r\n"
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\n"
+        f"Content-Type: {content_type}\r\n\r\n"
+    ).encode() + audio + f"\r\n--{boundary}--\r\n".encode()
+    request = Request("https://api.openai.com/v1/audio/transcriptions", data=body, headers={
+        "Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}",
+        "Content-Type": f"multipart/form-data; boundary={boundary}",
+    })
+    with urlopen(request, timeout=60) as response:
+        transcript = json.load(response).get("text", "").strip()
+    if not transcript:
+        raise ValueError("No speech was detected. Please try again.")
+    return transcript
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path == "/api/config":
+            return self.json_response(200, {"serverTranscription": bool(os.getenv("OPENAI_API_KEY"))})
         files = {"/": ("index.html", "text/html"), "/app.js": ("app.js", "text/javascript"), "/style.css": ("style.css", "text/css")}
         if self.path not in files:
             return self.send_error(404)
@@ -24,6 +49,8 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_POST(self):
+        if self.path == "/api/transcribe":
+            return self.transcribe_audio()
         if self.path != "/api/chat":
             return self.send_error(404)
         try:
@@ -44,6 +71,25 @@ class Handler(BaseHTTPRequestHandler):
             self.json_response(400, {"error": str(error)})
         except (HTTPError, URLError, TimeoutError) as error:
             self.json_response(502, {"error": f"Model request failed: {error}"})
+
+    def transcribe_audio(self):
+        if not os.getenv("OPENAI_API_KEY"):
+            return self.json_response(503, {"error": "Server transcription requires OPENAI_API_KEY."})
+        content_type = self.headers.get("Content-Type", "").split(";")[0].lower()
+        extensions = {"audio/webm": "webm", "audio/mp4": "mp4", "audio/mpeg": "mp3", "audio/wav": "wav"}
+        if content_type not in extensions:
+            return self.json_response(415, {"error": "Unsupported audio format."})
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if not 100 <= length <= 10_000_000:
+                raise ValueError("Record a short clip under 10 MB.")
+            audio = self.rfile.read(length)
+            transcript = transcribe_clip(audio, content_type)
+            return self.json_response(200, {"text": transcript})
+        except ValueError as error:
+            return self.json_response(400, {"error": str(error)})
+        except (HTTPError, URLError, TimeoutError) as error:
+            return self.json_response(502, {"error": f"Transcription failed: {error}"})
 
     def json_response(self, status, value):
         data = json.dumps(value).encode()

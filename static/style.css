@@ -19,3 +19,5 @@ input,form button,.suggestion,.reset{border-radius:10px}
 .inspector-heading{padding-top:19px}
 .activity{min-height:140px}
 .empty-activity{margin:32px 0}
+#mic.recording{background:#a83c3c;color:#fff;box-shadow:0 0 0 4px #a83c3c30;animation:mic-pulse 1.2s ease-in-out infinite}
+@keyframes mic-pulse{50%{box-shadow:0 0 0 9px #a83c3c12}}

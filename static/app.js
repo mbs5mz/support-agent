@@ -58,12 +58,94 @@ document.querySelector('#reset').addEventListener('click', () => {history = []; 
 
 const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const mic = document.querySelector('#mic');
-if (!Recognition) {mic.disabled = true; voiceNote.textContent = 'Speech input is unavailable in this browser; typing still works.';}
-else {
+let recorder = null;
+let recordingTimer = null;
+
+function voiceError(error) {
+  if (error === 'not-allowed' || error === 'service-not-allowed' || error === 'NotAllowedError' || error === 'PermissionDeniedError') return 'Microphone access was denied. Allow it for localhost in your browser or system settings, then try again.';
+  if (error === 'audio-capture' || error === 'NotFoundError' || error === 'NotReadableError') return 'No available microphone was found. Check your input device and try again.';
+  if (error === 'network') return 'The browser speech service could not connect. Try a supported browser, or configure OPENAI_API_KEY for recorded transcription.';
+  if (error === 'no-speech') return 'I did not hear any speech. Please try again.';
+  return `Speech could not start (${error || 'unknown error'}). Try typing or another browser.`;
+}
+
+function enableBrowserRecognition() {
+  if (!Recognition) {
+    mic.disabled = true;
+    voiceNote.textContent = 'Speech recognition is unavailable here. Configure OPENAI_API_KEY for recorded transcription, or type your question.';
+    return;
+  }
+  voiceNote.textContent = 'Voice uses your browser’s speech service. Press the microphone to speak.';
   const recognition = new Recognition();
   recognition.lang = 'en-US';
-  recognition.onresult = event => {input.value = event.results[0][0].transcript; voiceNote.textContent = 'Transcribed. Press Send to review and submit.'; input.focus();};
-  recognition.onerror = () => {voiceNote.textContent = 'Could not capture speech. You can type instead.';};
-  recognition.onend = () => {mic.disabled = false;};
-  mic.addEventListener('click', () => {mic.disabled = true; voiceNote.textContent = 'Listening…'; recognition.start();});
+  recognition.onresult = event => {input.value = event.results[0][0].transcript; voiceNote.textContent = 'Transcribed. Review the text, then press Send.'; input.focus();};
+  recognition.onerror = event => {voiceNote.textContent = voiceError(event.error);};
+  recognition.onend = () => {mic.disabled = false; mic.classList.remove('recording'); mic.setAttribute('aria-pressed', 'false');};
+  mic.addEventListener('click', () => {
+    mic.disabled = true;
+    mic.classList.add('recording');
+    mic.setAttribute('aria-pressed', 'true');
+    voiceNote.textContent = 'Listening…';
+    try {recognition.start();} catch (error) {voiceNote.textContent = voiceError(error.name); mic.disabled = false; mic.classList.remove('recording');}
+  });
 }
+
+function enableRecordedTranscription() {
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+    enableBrowserRecognition();
+    return;
+  }
+  const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find(type => MediaRecorder.isTypeSupported(type));
+  if (!mimeType) {enableBrowserRecognition(); return;}
+  mic.title = 'Start or stop recording';
+  mic.setAttribute('aria-label', 'Start recording');
+  voiceNote.textContent = 'Voice clips are transcribed through the configured OpenAI API. Press the microphone to start.';
+  mic.addEventListener('click', async () => {
+    if (recorder?.state === 'recording') {recorder.stop(); return;}
+    mic.disabled = true;
+    voiceNote.textContent = 'Requesting microphone access…';
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({audio: true});
+      const chunks = [];
+      recorder = new MediaRecorder(stream, {mimeType});
+      recorder.ondataavailable = event => {if (event.data.size) chunks.push(event.data);};
+      recorder.onerror = event => {voiceNote.textContent = voiceError(event.error?.name);};
+      recorder.onstop = async () => {
+        clearTimeout(recordingTimer);
+        stream.getTracks().forEach(track => track.stop());
+        mic.disabled = true;
+        mic.classList.remove('recording');
+        mic.setAttribute('aria-pressed', 'false');
+        mic.setAttribute('aria-label', 'Start recording');
+        voiceNote.textContent = 'Transcribing recording…';
+        try {
+          const blob = new Blob(chunks, {type: mimeType});
+          const response = await fetch('/api/transcribe', {method: 'POST', headers: {'Content-Type': mimeType.split(';')[0]}, body: blob});
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || 'Transcription failed');
+          input.value = data.text;
+          voiceNote.textContent = 'Transcribed. Review the text, then press Send.';
+          input.focus();
+        } catch (error) {voiceNote.textContent = error.message;}
+        finally {recorder = null; mic.disabled = false;}
+      };
+      recorder.start();
+      mic.disabled = false;
+      mic.classList.add('recording');
+      mic.setAttribute('aria-pressed', 'true');
+      mic.setAttribute('aria-label', 'Stop recording');
+      voiceNote.textContent = 'Recording… press the microphone again to stop (20 seconds maximum).';
+      recordingTimer = setTimeout(() => {if (recorder?.state === 'recording') recorder.stop();}, 20000);
+    } catch (error) {
+      stream?.getTracks().forEach(track => track.stop());
+      voiceNote.textContent = voiceError(error.name);
+      mic.disabled = false;
+    }
+  });
+}
+
+fetch('/api/config').then(response => response.json()).then(config => {
+  if (config.serverTranscription) enableRecordedTranscription();
+  else enableBrowserRecognition();
+}).catch(enableBrowserRecognition);

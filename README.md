@@ -19,7 +19,9 @@ export OPENAI_API_KEY="your-key"
 python3 server.py
 ```
 
-The API-backed path calls the OpenAI Responses API directly using `urllib.request`, passes explicit function definitions, executes selected functions in Python, and submits function outputs back to the model. Conversation turns are supplied on each request; API response storage is disabled. The browser's microphone button uses Web Speech recognition where available and fills the input for review before sending.
+The API-backed chat path calls the OpenAI Responses API directly using `urllib.request`, passes explicit function definitions, executes selected functions in Python, and submits function outputs back to the model. Conversation turns are supplied on each request; API response storage is disabled.
+
+The microphone has two modes. With `OPENAI_API_KEY`, press once to start recording and again to stop; the finished clip is sent through this local server to OpenAI's transcription API, then the text appears in the input for review before sending. Recording stops automatically after 20 seconds. Without a key, the app uses the browser's built-in speech recognition if available; browser support and permission behavior vary. Audio is not stored by this app. A denied microphone permission, missing input device, or speech-service failure now shows a specific message.
 
 ## Review scenarios
 
