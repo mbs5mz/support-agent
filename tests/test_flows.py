@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from agent import respond_demo
-from bookly import RETURN_REQUESTS
+from bookly import REFUND_REQUESTS, RETURN_REQUESTS, create_refund_request
 
 
 class DemoFlows(unittest.TestCase):
@@ -64,6 +64,25 @@ class DemoFlows(unittest.TestCase):
         answer, calls = respond_demo(history)
         self.assertIn("30 days", answer)
         self.assertEqual(calls[0]["tool"], "get_policy")
+
+    def test_refund_requires_received_return_and_confirmation(self):
+        history = [{"role": "user", "content": "I want a refund for BK-4120, morgan@example.com"}]
+        answer, calls = respond_demo(history)
+        self.assertIn("create a refund request?", answer)
+        self.assertEqual(calls[0]["tool"], "get_order_status")
+        self.assertFalse(REFUND_REQUESTS)
+        history += [{"role": "assistant", "content": answer}, {"role": "user", "content": "Yes, please create it"}]
+        answer, calls = respond_demo(history)
+        self.assertIn("REF-4120", answer)
+        self.assertIn("No payment has been refunded", answer)
+        self.assertEqual(calls[0]["tool"], "create_refund_request")
+
+    def test_refund_rejected_before_return_received(self):
+        history = [{"role": "user", "content": "I want a refund for BK-2088, sam@example.com"}]
+        answer, calls = respond_demo(history)
+        self.assertIn("not been received", answer)
+        self.assertEqual(calls[0]["tool"], "get_order_status")
+        self.assertIn("error", create_refund_request("BK-2088", "sam@example.com"))
 
 
 if __name__ == "__main__":

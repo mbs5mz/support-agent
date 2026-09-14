@@ -10,7 +10,8 @@ from bookly import FUNCTIONS, TOOLS
 INSTRUCTIONS = """You are Bookly's customer support agent. Bookly and all records are fictional.
 Keep replies concise and friendly. Never invent order status or policy details; use tools.
 For an order lookup, collect both order ID and email before calling get_order_status.
-For a return, collect both fields and explicit intent to create a request before calling create_return_request.
+For a return, collect both fields and explicit confirmation before calling create_return_request.
+For a refund, collect both fields, check order status, explain that a returned book must have been received, and ask for explicit confirmation before calling create_refund_request. A request is only submitted for review; no money moves.
 If a request is ambiguous, ask one focused clarifying question before answering or using a tool.
 Never ask for a password or password-reset link. Do not claim a real refund or email was sent.
 If a tool reports an error, explain it without guessing.
@@ -41,8 +42,12 @@ def respond_ai(history: list) -> tuple[str, list]:
             args = {}
             try:
                 args = json.loads(call.get("arguments", "{}"))
-                if name == "create_return_request" and not any(phrase in history[-1]["content"].lower() for phrase in ("yes", "create", "go ahead", "please do")):
-                    result = {"error": "Ask the customer to confirm creating the return request first."}
+                previous_answer = next((turn["content"].lower() for turn in reversed(history[:-1]) if turn["role"] == "assistant"), "")
+                confirmed = history[-1]["content"].strip().lower() in ("yes", "yes please", "please do", "go ahead", "create it", "yes, please create it", "submit it", "yes, submit it")
+                request_kind = "return" if name == "create_return_request" else "refund"
+                pending_request = re.search(rf"\b(create|submit) (a |the )?{request_kind} request\b", previous_answer)
+                if name in ("create_return_request", "create_refund_request") and not (confirmed and pending_request):
+                    result = {"error": "Ask the customer to confirm this specific request first."}
                 else:
                     result = FUNCTIONS[name](**args) if name in FUNCTIONS else {"error": "Unknown tool"}
             except (ValueError, TypeError, KeyError) as error:
@@ -65,33 +70,43 @@ def respond_demo(history: list) -> tuple[str, list]:
     if "return policy" in latest or "refund policy" in latest or "returns" in latest:
         policy_topic = "returns"
     policy_request = "policy" in latest or "shipping" in latest or "password" in latest or "reset" in latest or "returns" in latest
-    return_request = bool(re.search(r"\b(return|refund)\b", latest)) and not policy_request
+    refund_request = bool(re.search(r"\brefund\b", latest)) and not policy_request
+    return_request = bool(re.search(r"\breturn\b", latest)) and not policy_request
     order_request = any(word in latest for word in ("order", "package", "tracking", "where is", "where's", "status"))
     confirming_return = "create a return request?" in previous_answer and latest.strip() in ("yes", "yes please", "please do", "go ahead", "create it", "yes, please create it")
     declining_return = "create a return request?" in previous_answer and latest.strip() in ("no", "no thanks", "cancel")
+    confirming_refund = "create a refund request?" in previous_answer and latest.strip() in ("yes", "yes please", "please do", "go ahead", "create it", "yes, please create it", "submit it", "yes, submit it")
+    declining_refund = "create a refund request?" in previous_answer and latest.strip() in ("no", "no thanks", "cancel")
 
     if declining_return:
         return "Okay, I haven't created a return request.", []
+    if declining_refund:
+        return "Okay, I haven't created a refund request.", []
     if policy_request:
         if not policy_topic:
             return "Can you tell me whether you mean shipping, returns, or password reset?", []
         result = FUNCTIONS["get_policy"](policy_topic)
         return result["policy"], [{"tool": "get_policy", "arguments": {"topic": policy_topic}, "result": result}]
 
-    if return_request:
+    if refund_request:
+        intent = "refund"
+    elif return_request:
         intent = "return"
     elif order_request:
         intent = "order"
     elif confirming_return:
         intent = "return_confirmed"
+    elif confirming_refund:
+        intent = "refund_confirmed"
     elif any(prompt in previous_answer for prompt in ("what is your order number?", "what email address was used")):
         # A bare ID or email continues the question the agent just asked.
         prior_requests = [turn["content"].lower() for turn in history[:-1] if turn["role"] == "user"]
-        intent = "return" if any(re.search(r"\b(return|refund)\b", text) and "policy" not in text for text in prior_requests) else "order"
+        prior_intent = next((text for text in reversed(prior_requests) if re.search(r"\b(return|refund|order|tracking|status)\b", text) and "policy" not in text), "")
+        intent = "refund" if "refund" in prior_intent else "return" if "return" in prior_intent else "order"
     else:
-        return "Can you tell me whether you mean an order, a return, shipping, or password reset?", []
+        return "Can you tell me whether you mean an order, a return, a refund, shipping, or password reset?", []
 
-    if intent in ("return", "return_confirmed", "order"):
+    if intent in ("return", "return_confirmed", "refund", "refund_confirmed", "order"):
         if not order:
             return "What is your order number? It looks like BK-1042.", []
         if not email:
@@ -106,6 +121,18 @@ def respond_demo(history: list) -> tuple[str, list]:
             result = FUNCTIONS["create_return_request"](order.group(), email.group())
             activity = [{"tool": "create_return_request", "arguments": {"order_id": order.group(), "email": email.group()}, "result": result}]
             return (result.get("error") or f"Demo return request {result['request_id']} created. {result['next_step']}"), activity
+        if intent in ("refund", "refund_confirmed"):
+            if intent != "refund_confirmed":
+                result = FUNCTIONS["get_order_status"](order.group(), email.group())
+                activity = [{"tool": "get_order_status", "arguments": {"order_id": order.group(), "email": email.group()}, "result": result}]
+                if "error" in result:
+                    return result["error"], activity
+                if result["status"] != "Return received":
+                    return "I found the order, but a returned book has not been received yet. I can't submit a refund request until it is received.", activity
+                return f"I found {result['book']}; its return was received. Would you like me to create a refund request? This only submits it for review.", activity
+            result = FUNCTIONS["create_refund_request"](order.group(), email.group())
+            activity = [{"tool": "create_refund_request", "arguments": {"order_id": order.group(), "email": email.group()}, "result": result}]
+            return (result.get("error") or f"Demo refund request {result['request_id']} submitted for review. {result['next_step']}"), activity
         result = FUNCTIONS["get_order_status"](order.group(), email.group())
         activity = [{"tool": "get_order_status", "arguments": {"order_id": order.group(), "email": email.group()}, "result": result}]
         return (result.get("error") or f"Order {result['order_id']} for {result['book']} is {result['status'].lower()}. {result['detail']}"), activity
