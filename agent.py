@@ -45,15 +45,13 @@ def pending_request_kind(previous_answer: str) -> Optional[str]:
     text = previous_answer.lower()
     if "?" not in text and "confirm" not in text:
         return None
-    questions = re.findall(r"[^?]*\?", text)
-    proposal = (questions[-1] if questions else text).rsplit(".", 1)[-1]
-    if not re.search(r"\b(create|start|submit|open|initiate|request|proceed|process|go ahead|confirm)\b", proposal):
-        return None
-    if re.search(r"\brefund\b", proposal):
-        return "refund"
-    if re.search(r"\breturn\b", proposal):
-        return "return"
-    return None
+    # Match the proposed action itself. Splitting on punctuation breaks on
+    # trailing periods, quoted confirmations, and email addresses.
+    proposals = list(re.finditer(
+        r"\b(?:create|start|submit|open|initiate|process|confirm)\b.{0,100}?\b(return|refund)\b",
+        text,
+    ))
+    return proposals[-1].group(1) if proposals else None
 
 
 def confirmed_action(history: list) -> Optional[tuple[str, list]]:

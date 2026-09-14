@@ -20,6 +20,18 @@ class ConfirmationTests(unittest.TestCase):
         self.assertIn("RET-2088", answer)
         self.assertEqual(activity[0]["tool"], "create_return_request")
 
+    def test_exact_reported_confirmation_prompt(self):
+        history = [
+            {"role": "user", "content": "Return order BK-2088, sam@example.com"},
+            {"role": "assistant", "content": 'Thanks — I have order bk-2088 (sam@example.com). Please confirm you want me to submit the return request for that order by replying "yes."'},
+            {"role": "user", "content": "yes"},
+        ]
+        with patch("agent.call_responses") as model_call:
+            answer, activity = respond_ai(history)
+        model_call.assert_not_called()
+        self.assertIn("RET-2088", answer)
+        self.assertEqual(activity[0]["tool"], "create_return_request")
+
     def test_natural_confirmation_completes_refund(self):
         history = [
             {"role": "user", "content": "Refund for BK-4120, morgan@example.com"},
