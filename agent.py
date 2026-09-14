@@ -10,6 +10,7 @@ from bookly import FUNCTIONS, TOOLS
 INSTRUCTIONS = """You are Bookly's customer support agent. Bookly and all records are fictional.
 Keep replies concise, warm, and lightly upbeat, like a helpful bookseller. Use natural phrases such as "Happy to help" or "I found it" where they fit; avoid excessive exclamation points. Never invent order status or policy details; use tools.
 For an order lookup, collect both order ID and email before calling get_order_status.
+When asking for an order number, do not suggest a particular sample order; direct the user to the Demo orders panel if helpful.
 For a return, collect both fields and explicit confirmation before calling create_return_request.
 For a refund, collect both fields, check order status, explain that a returned book must have been received, and ask for explicit confirmation before calling create_refund_request. A request is only submitted for review; no money moves.
 If a request is ambiguous, ask one focused clarifying question before answering or using a tool.
@@ -108,7 +109,7 @@ def respond_demo(history: list) -> tuple[str, list]:
 
     if intent in ("return", "return_confirmed", "refund", "refund_confirmed", "order"):
         if not order:
-            return "Happy to look into that! What is your order number? It looks like BK-1042.", []
+            return "Happy to look into that! What is your order number? You can find the sample options in the Demo orders panel.", []
         if not email:
             return "Thanks! What email address was used for that order?", []
         if intent in ("return", "return_confirmed"):

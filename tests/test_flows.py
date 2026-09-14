@@ -12,6 +12,7 @@ class DemoFlows(unittest.TestCase):
         history = [{"role": "user", "content": "Where is my order?"}]
         answer, calls = respond_demo(history)
         self.assertIn("order number", answer)
+        self.assertNotIn("BK-1042", answer)
         self.assertFalse(calls)
         history += [{"role": "assistant", "content": answer}, {"role": "user", "content": "BK-1042"}]
         answer, calls = respond_demo(history)
