@@ -9,6 +9,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from agent import respond
+from agent_workspace import duet_assist, platform_summary, select_aop
 
 STATIC = Path(__file__).parent / "static"
 
@@ -37,6 +38,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/api/config":
             return self.json_response(200, {"serverTranscription": bool(os.getenv("OPENAI_API_KEY"))})
+        if self.path == "/api/platform":
+            return self.json_response(200, platform_summary())
         files = {"/": ("index.html", "text/html"), "/app.js": ("app.js", "text/javascript"), "/style.css": ("style.css", "text/css")}
         if self.path not in files:
             return self.send_error(404)
@@ -51,6 +54,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/api/transcribe":
             return self.transcribe_audio()
+        if self.path == "/api/duet":
+            return self.duet_message()
         if self.path != "/api/chat":
             return self.send_error(404)
         try:
@@ -66,11 +71,27 @@ class Handler(BaseHTTPRequestHandler):
             if history[-1]["role"] != "user":
                 raise ValueError("Last turn must be from the user.")
             answer, activity, mode = respond(history)
-            self.json_response(200, {"answer": answer, "activity": activity, "mode": mode})
+            self.json_response(200, {"answer": answer, "activity": activity, "mode": mode, "trace": select_aop(history, activity)})
         except (ValueError, json.JSONDecodeError) as error:
             self.json_response(400, {"error": str(error)})
         except (HTTPError, URLError, TimeoutError) as error:
             self.json_response(502, {"error": f"Model request failed: {error}"})
+
+    def duet_message(self):
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length <= 0 or length > 10000:
+                raise ValueError("Request body must be 1–10 KB.")
+            payload = json.loads(self.rfile.read(length))
+            prompt = payload.get("prompt", "")
+            aop_id = payload.get("aop_id", "")
+            if not isinstance(prompt, str) or not 1 <= len(prompt) <= 2000:
+                raise ValueError("Duet prompt must be 1–2,000 characters.")
+            if not isinstance(aop_id, str):
+                raise ValueError("Invalid AOP selection.")
+            self.json_response(200, duet_assist(prompt, aop_id))
+        except (ValueError, json.JSONDecodeError) as error:
+            self.json_response(400, {"error": str(error)})
 
     def transcribe_audio(self):
         if not os.getenv("OPENAI_API_KEY"):
@@ -101,6 +122,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    server = ThreadingHTTPServer(("127.0.0.1", 8000), Handler)
-    print("Bookly demo: http://localhost:8000", flush=True)
+    port = int(os.getenv("PORT", "8000"))
+    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    print(f"Bookly demo: http://localhost:{port}", flush=True)
     server.serve_forever()

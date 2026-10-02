@@ -1,6 +1,6 @@
 # Bookly support agent demo
 
-Bookly is a **fictional** online bookstore. This browser-based prototype handles order status, return and refund requests, and common policy questions. It demonstrates multi-turn conversation, clarifying questions, and visible tool calls. The backend uses Python's standard-library HTTP server; the frontend is plain HTML, CSS, and JavaScript. No package installation or database setup is needed.
+Bookly is a **fictional** online bookstore. This browser-based prototype handles order status, return and refund requests, and common policy questions. It also includes a lightweight agent-building workspace inspired by modern CX platforms: a dashboard, inspectable Agent Operating Procedures (AOPs), execution traces, Watchtower-style quality monitoring, and a simulated Duet-style optimization assistant. The backend uses Python's standard-library HTTP server; the frontend is plain HTML, CSS, and JavaScript. No package installation or database setup is needed.
 
 ## Start the demo
 
@@ -14,7 +14,7 @@ Bookly is a **fictional** online bookstore. This browser-based prototype handles
 
    On Windows, `py server.py` is an alternative. Leave the terminal running. You should see `Bookly demo: http://localhost:8000`.
 
-4. Open [http://localhost:8000](http://localhost:8000) in a browser. Type a question and press **Send**. The three prompt buttons fill the input with starting ideas; you can edit the text before sending. The **Demo orders** panel lists sample credentials, and the activity panel shows backend tool calls and results.
+4. Open [http://localhost:8000](http://localhost:8000) in a browser. Start on **Overview**, inspect a procedure under **AOPs**, monitor simulated quality in **Watchtower**, ask the simulated builder a question under **Duet**, or open **Playground** to chat with the customer-facing agent. The Playground's **Demo data** tab lists sample credentials, while **Trace** shows the selected AOP and tool activity. The Tools, Knowledge, and Guardrails links under **Build** open their respective resource catalogs.
 
 The app works immediately without an API key. Its status badge says **Scripted demo**: replies follow deterministic rules, so anyone can test the workflows, but this mode is not an LLM. Press **Reset conversation** to start a new chat and clear visible tool activity. To stop the server, press `Ctrl+C` in its terminal.
 
@@ -59,6 +59,22 @@ Try these as separate conversations, using **Reset conversation** between them:
 
 The model-backed path may phrase questions differently, but the same sample data and Python tool rules apply. The scripted path is predictable and useful for a quick walkthrough without API access.
 
+## Explore AOPs and Duet
+
+The **AOPs** page exposes the four Bookly workflows as natural-language operating procedures. Select one to review its entry conditions, referenced tools, guardrails, and ordered steps. **Test in playground** carries its sample prompt into the customer chat. During a chat, the Trace panel explains which AOP was selected and records each tool call.
+
+The **Duet** page simulates three agent-development tasks using deterministic Bookly demo data:
+
+- Analyze recent workflow performance and produce an optimization report.
+- Draft a new damaged-book AOP for human review.
+- Generate a compact simulation suite for a selected AOP.
+
+These outputs are illustrative and intentionally review-only: the demo does not autonomously publish workflow changes. This is an independent product simulation, not Decagon software or a connection to Decagon's platform.
+
+## Monitor with Watchtower
+
+The **Watchtower** page demonstrates an always-on QA and analytics workspace using fictional metrics and conversations. It includes deflection rate, verified resolution, simulated CSAT, escalation rate, separate outcome graphs, custom rubric health, and a filterable conversation review queue. Each headline is the average of the points plotted for that window. The windows also roll up consistently: the latest week in the 30-day graph equals the 7-day headline, and the latest month in the 90-day graph equals the 30-day headline. Together, the 90-day, 30-day, and 7-day views show performance improving as Bookly adds AOPs and policy coverage. No production conversations or customer data are collected.
+
 ## Voice input
 
 With `OPENAI_API_KEY`, press the microphone once to start recording and again to stop (or wait for the 20-second limit). The server sends the clip to OpenAI's transcription API. Review the resulting text in the input box, then press **Send**. Without a key, the demo uses the browser's built-in speech recognition when available. Voice support depends on browser and microphone permissions; typing always works. The app does not save audio clips.
@@ -67,7 +83,7 @@ With `OPENAI_API_KEY`, press the microphone once to start recording and again to
 
 The browser sends conversation history with each chat request; **Reset conversation** clears that browser session. Sample orders, policies, and created request records live in Python memory in `bookly.py`. Restarting the server clears created return and refund requests. There is no persistent database, account login, real order connection, email delivery, or payment action. API-backed chat sets OpenAI response storage to `false`.
 
-`server.py` serves the page and exposes `/api/chat`, `/api/config`, and optional `/api/transcribe`. `agent.py` contains the instructions, conversation orchestration, and confirmation handling. `bookly.py` contains sample records and the four tool functions. `static/` contains the browser UI.
+`server.py` serves the page and exposes `/api/chat`, `/api/platform`, `/api/duet`, `/api/config`, and optional `/api/transcribe`. `agent.py` contains the customer-agent instructions, conversation orchestration, and confirmation handling. `bookly.py` contains sample records and the four action tools. `agent_workspace.py` contains the AOP catalog, trace routing, Watchtower metrics, build resources, dashboard data, and simulated Duet artifacts. `static/` contains the browser UI.
 
 ## Troubleshooting and checks
 
